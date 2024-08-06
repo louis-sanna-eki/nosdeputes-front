@@ -1,7 +1,6 @@
 import * as React from "react";
 import knex from "knex";
 import config from "./knexfile";
-import { AN1_COM_FOND, AN1_COM_FOND_NOMIN } from "./Acts";
 import {
   Dossier,
   ActeLegislatif,
@@ -174,7 +173,7 @@ export async function getDossierUnCached(
     });
 
     const commissionFondId = acts.filter(
-      (act): act is AN1_COM_FOND => act.codeActe === "AN1-COM-FOND"
+      (act) => act.codeActe === "AN1-COM-FOND"
     )[0]?.organeRefUid;
     const commissionAvisId = acts.filter(
       (act): act is any => act.codeActe === "AN1-COM-AVIS" // Type is not defined because I did not get any of those event in the 1000 rows fetched
@@ -182,7 +181,7 @@ export async function getDossierUnCached(
 
     // A utiliser pour trouver les rapporteurs dans la table Rapporteur (a par)
     const nominationRapporteursCommissionFondId = acts.filter(
-      (act): act is AN1_COM_FOND_NOMIN => act.codeActe === "AN1-COM-FOND-NOMIN"
+      (act) => act.codeActe === "AN1-COM-FOND-NOMIN"
     )[0]?.uid;
 
     const nominationRapporteursCommissionFond: any[] =
@@ -437,143 +436,6 @@ export async function getDossierVotesUnCached(
   }
 }
 
-export async function getDeputeUnCached(slug: string) {
-  try {
-    const depute = await db.select("*").from("Acteur").where("slug", "=", slug);
-    if (!depute) {
-      return {};
-    }
-
-    const group = await db
-      .select("*")
-      .from("Organe")
-      .where("uid", "=", depute[0].groupeParlementaireUid);
-
-    const adressesElect = await db
-      .select("*")
-      .from("AdresseElectronique")
-      .where("acteurRefUid", "=", depute[0].uid);
-
-    const adressesPostal = await db
-      .select("*")
-      .from("AdressePostale")
-      .where("acteurRefUid", "=", depute[0].uid);
-
-    const mandats = await db
-      .select("*")
-      .from("Mandat")
-      .where("acteurRefUid", "=", depute[0].uid)
-      .leftJoin("OrganeMandat", "Mandat.uid", "OrganeMandat.mandatRefUid")
-      .leftJoin("Organe", "OrganeMandat.organeRefUid", "Organe.uid");
-
-    return {
-      depute: depute[0],
-      group: group[0],
-      adresses: [...adressesElect, ...adressesPostal],
-      mandats,
-    };
-  } catch (error) {
-    console.error("Error fetching depute:", error);
-    throw error;
-  }
-}
-
-export async function getDeputeAmendementUnCached(slug: string) {
-  try {
-    const depute = await db
-      .select("uid", "prenom", "nom")
-      .from("Acteur")
-      .where("slug", "=", slug);
-    if (!depute) {
-      return {};
-    }
-
-    const amendements = await db
-      .select("*")
-      .from("Amendement")
-      .where("acteurRefUid", "=", depute[0].uid)
-      .options({ nestTables: true });
-
-    return {
-      depute: depute[0],
-      amendements,
-    };
-  } catch (error) {
-    console.error(`Error fetching amendement from depute ${slug}:`, error);
-    throw error;
-  }
-}
-
-export async function getDeputeVotesUnCached(slug: string) {
-  try {
-    const depute = await db
-      .select("uid", "prenom", "nom")
-      .from("Acteur")
-      .where("slug", "=", slug);
-    if (!depute) {
-      return {};
-    }
-
-    const votes = await db
-      .select("*")
-      .from("Vote")
-      .where("acteurRefUid", "=", depute[0].uid)
-      .rightJoin(
-        // I don't know why this has to be a right join to work
-        function () {
-          this.select(["voteRefUid", "acteLegislatifRefUid"])
-            .from("VoteActeLegislatif")
-            .as("voteActe");
-        },
-        "voteActe.voteRefUid",
-        "Vote.scrutinRefUid"
-      )
-      .leftJoin(
-        function () {
-          this.select([
-            "uid as acte_uid",
-            "codeActe",
-            "nomCanonique",
-            "libelleCourtActe",
-          ])
-            .from("ActeLegislatif")
-            .as("acte");
-        },
-        "voteActe.acteLegislatifRefUid",
-        "acte.acte_uid"
-      )
-      .rightJoin(
-        // I don't know why this has to be a right join to work
-        function () {
-          this.select(["texteAssocieRefUid", "acteLegislatifRefUid"])
-            .from("TexteAssocie")
-            .as("texteAssocie");
-        },
-        "texteAssocie.acteLegislatifRefUid",
-        "acte.acte_uid"
-      )
-      .leftJoin(
-        // I don't know why this has to be a right join to work
-        function () {
-          this.select(["uid as docu_uid", "titrePrincipalCourt"])
-            .from("Document")
-            .as("docu");
-        },
-        "texteAssocie.texteAssocieRefUid",
-        "docu.docu_uid"
-      )
-      .options({ nestTables: true });
-
-    return {
-      depute: depute[0],
-      votes,
-    };
-  } catch (error) {
-    console.error(`Error fetching amendement from depute ${slug}:`, error);
-    throw error;
-  }
-}
-
 export async function getDeputeDocumentsUnCached(slug: string) {
   try {
     const depute = await db
@@ -768,9 +630,24 @@ export async function getTableUnCached(
   limit = 10
 ): Promise<Dossier[]> {
   try {
+    if (table === "VoteActeLegislatif") {
+      //   return await db
+      //     .select("voteRefUid")
+      //     .from(table)
+      //     .groupBy("voteRefUid")
+      //     .havingRaw("COUNT(*) = 1");
+
+      return await db
+        .select("*")
+        .from(table)
+        // .where("voteRefUid", "=", "VTANR5L16V569")
+        .limit(limit);
+    }
+
     const rows = await db
       .select("*")
       .from(table || "Dossier")
+
       .limit(limit);
     return rows;
   } catch (error) {
@@ -785,9 +662,7 @@ export const getDossiers = React.cache(getDossiersUnCached);
 export const getDossier = getDossierUnCached; //React.cache();
 export const getDossierAmendements = getDossierAmendementsUnCached; //React.cache();
 export const getDossierVotes = getDossierVotesUnCached; //React.cache();
-export const getDepute = getDeputeUnCached; //React.cache();
-export const getDeputeAmendement = getDeputeAmendementUnCached; //React.cache();
-export const getDeputeVotes = getDeputeVotesUnCached; //React.cache();
+
 export const getDeputeDocuments = getDeputeDocumentsUnCached; //React.cache();
 export const getDeputes = getDeputesUnCached; //React.cache();
 export const getParagraphs = getParagraphsUnCached; //React.cache();
